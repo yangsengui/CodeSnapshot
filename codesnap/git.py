@@ -239,6 +239,81 @@ class GitOps:
         except GitCommandError as e:
             return str(e)
     
+    def verify_branch_exists(self, branch_name: str) -> bool:
+        """
+        Check if a branch exists in the repository.
+        
+        Args:
+            branch_name (str): The name of the branch to check
+            
+        Returns:
+            bool: True if the branch exists, False otherwise
+        """
+        if not self.repo:
+            return False
+        
+        try:
+            # Check if the branch exists in the list of branches
+            return branch_name in [head.name for head in self.repo.heads]
+        except GitCommandError:
+            return False
+    
+    def merge_without_commit(self, branch_name: str) -> Tuple[bool, str]:
+        """
+        Merge a branch into the current branch without committing.
+        
+        Args:
+            branch_name (str): The name of the branch to merge
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
+        if not self.repo:
+            return False, "Not a git repository"
+        
+        try:
+            self.repo.git.merge("--no-commit", "--no-ff", branch_name)
+            return True, f"Started merge of '{branch_name}'"
+        except GitCommandError as e:
+            return False, str(e)
+    
+    def abort_merge(self) -> Tuple[bool, str]:
+        """
+        Abort the current merge operation.
+        
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
+        if not self.repo:
+            return False, "Not a git repository"
+        
+        try:
+            self.repo.git.merge("--abort")
+            return True, "Merge aborted"
+        except GitCommandError as e:
+            return False, str(e)
+    
+    def merge_with_commit(self, branch_name: str, message: str) -> Tuple[bool, str]:
+        """
+        Merge a branch into the current branch with a commit.
+        
+        Args:
+            branch_name (str): The name of the branch to merge
+            message (str): The commit message
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
+        if not self.repo:
+            return False, "Not a git repository"
+        
+        try:
+            self.repo.git.merge("--no-ff", branch_name, "-m", message)
+            commit_hash = self.repo.head.commit.hexsha[:7]
+            return True, f"[{self.get_current_branch()} {commit_hash}] {message}"
+        except GitCommandError as e:
+            return False, str(e)
+    
     def squash_commits(self, message: str) -> Tuple[bool, str]:
         """
         Squash all commits from the current branch into one and merge into the main branch.

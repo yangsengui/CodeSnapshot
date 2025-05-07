@@ -67,8 +67,7 @@ class TaskManager:
             if not base_branch:
                 return False, "Unable to determine current branch"
 
-        success, _ = self.git._run_command(f"git rev-parse --verify {base_branch}")
-        if not success:
+        if not self.git.verify_branch_exists(base_branch):
             return False, f"Base branch '{base_branch}' does not exist"
 
         branch_name = f"{self.config.task_prefix}{task_name}"
@@ -200,9 +199,9 @@ class TaskManager:
         if not success:
             return False, f"Failed to checkout base branch: {output}"
 
-        success, output = self.git._run_command(f"git merge --no-commit --no-ff {current_branch}")
+        success, output = self.git.merge_without_commit(current_branch)
         if not success:
-            self.git._run_command("git merge --abort")
+            self.git.abort_merge()
             self.git.checkout_branch(current_branch)
             return False, f"Failed to merge changes: {output}"
 
@@ -249,7 +248,7 @@ class TaskManager:
                 return False, f"Failed to checkout base branch: {output}"
 
             merge_message = message or f"Merge task '{task.name}'"
-            success, output = self.git._run_command(f'git merge --no-ff {current_branch} -m "{merge_message}"')
+            success, output = self.git.merge_with_commit(current_branch, merge_message)
             
             if success:
                 self.update_task_status(task.name, TaskStatus.MERGED, False)
@@ -330,8 +329,7 @@ class TaskManager:
                 if merged_only and task["status"] != TaskStatus.MERGED.value:
                     continue
 
-                success, _ = self.git._run_command(f"git rev-parse --verify {task['branch']}")
-                if success:
+                if self.git.verify_branch_exists(task['branch']):
                     success, _ = self.git.delete_branch(task["branch"])
                     if success:
                         tasks_to_delete.append(task)
