@@ -1,8 +1,9 @@
 import os
-import subprocess
 import re
 from datetime import datetime
 from typing import Tuple, List, Optional
+import git
+from git import Repo, GitCommandError
 
 from .config import ConfigOptions
 
@@ -10,29 +11,22 @@ from .config import ConfigOptions
 class GitOps:
     def __init__(self) -> None:
         self.config = ConfigOptions()
+        self._repo = None
     
-    def _run_command(self, command: str, capture_output: bool = True) -> Tuple[bool, Optional[str]]:
+    @property
+    def repo(self):
         """
-        Execute a shell command and return the result.
+        Get the git.Repo instance for the current directory.
         
-        Args:
-            command (str): The shell command to execute
-            capture_output (bool): Whether to capture the command output
-            
         Returns:
-            Tuple[bool, Optional[str]]: (success flag, output or error message)
+            git.Repo: Repository instance
         """
-        try:
-            if capture_output:
-                result = subprocess.run(command, check=True, shell=True, 
-                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                                        encoding='utf-8')
-                return True, result.stdout.strip()
-            else:
-                subprocess.run(command, check=True, shell=True)
-                return True, None
-        except subprocess.CalledProcessError as e:
-            return False, e.stderr.strip() if e.stderr else str(e)
+        if self._repo is None and self.is_git_repo():
+            try:
+                self._repo = Repo(os.getcwd())
+            except GitCommandError:
+                pass
+        return self._repo
     
     def is_git_repo(self) -> bool:
         """
@@ -41,7 +35,11 @@ class GitOps:
         Returns:
             bool: True if it's a Git repository, False otherwise
         """
-        return self._run_command("git rev-parse --is-inside-work-tree")[0]
+        try:
+            Repo(os.getcwd())
+            return True
+        except (git.exc.InvalidGitRepositoryError, git.exc.NoSuchPathError):
+            return False
     
     def initialize_repository(self, branch_name: str = "master") -> bool:
         """
@@ -56,25 +54,23 @@ class GitOps:
         if self.is_git_repo():
             return False
         
-        success, _ = self._run_command("git init")
-        if not success:
+        try:
+            # Initialize repository
+            repo = Repo.init(os.getcwd())
+            self._repo = repo
+            
+            # Create a .gitignore file if it doesn't exist
+            if not os.path.exists(".gitignore"):
+                with open(".gitignore", "w") as f:
+                    f.write("# CodeSnap auto-generated .gitignore\n")
+            
+            # Add all files and create initial commit
+            repo.git.add(A=True)
+            repo.git.checkout(b=branch_name)
+            repo.git.commit(m="Initial commit")
+            return True
+        except GitCommandError:
             return False
-
-        # Create initial commit
-        success, _ = self._run_command("git checkout -b " + branch_name)
-        if not success:
-            return False
-        
-        # Create a .gitignore file if it doesn't exist
-        if not os.path.exists(".gitignore"):
-            with open(".gitignore", "w") as f:
-                f.write("# CodeSnap auto-generated .gitignore\n")
-        
-        # Add all files and create initial commit
-        self._run_command("git add .")
-        self._run_command('git commit -m "Initial commit"')
-        
-        return True
     
     def get_current_branch(self) -> Optional[str]:
         """
@@ -83,8 +79,12 @@ class GitOps:
         Returns:
             Optional[str]: Current branch name, or None if an error occurs
         """
-        success, output = self._run_command("git branch --show-current")
-        return output if success else None
+        if not self.repo:
+            return None
+        try:
+            return self.repo.active_branch.name
+        except (GitCommandError, TypeError):
+            return None
     
     def create_branch(self, branch_name: str) -> Tuple[bool, str]:
         """
@@ -96,8 +96,14 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
-        success, output = self._run_command(f"git checkout -b {branch_name}")
-        return success, output
+        if not self.repo:
+            return False, "Not a git repository"
+        
+        try:
+            self.repo.git.checkout(b=branch_name)
+            return True, f"Switched to a new branch '{branch_name}'"
+        except GitCommandError as e:
+            return False, str(e)
     
     def checkout_branch(self, branch_name: str) -> Tuple[bool, str]:
         """
@@ -109,8 +115,14 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
-        success, output = self._run_command(f"git checkout {branch_name}")
-        return success, output
+        if not self.repo:
+            return False, "Not a git repository"
+        
+        try:
+            self.repo.git.checkout(branch_name)
+            return True, f"Switched to branch '{branch_name}'"
+        except GitCommandError as e:
+            return False, str(e)
     
     def get_changes(self) -> str:
         """
@@ -119,8 +131,13 @@ class GitOps:
         Returns:
             str: A brief description of the working directory status
         """
-        success, output = self._run_command("git status --porcelain")
-        return output if success else ""
+        if not self.repo:
+            return ""
+        
+        try:
+            return self.repo.git.status(porcelain=True)
+        except GitCommandError:
+            return ""
     
     def commit_changes(self, message: str) -> Tuple[bool, str]:
         """
@@ -132,23 +149,21 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
+        if not self.repo:
+            return False, "Not a git repository"
+            
         if not self.get_changes():
             return False, "No changes to commit"
 
         current_branch = self.get_current_branch()
         if self.config.task_prefix in current_branch:
-            success, _ = self._run_command("git add .")
-            if not success:
-                return False, "Failed to stage changes"
-
-            success, output = self._run_command(f'git commit -m "{message}"')
-            if not success:
-                return False, f"Failed to commit: {output}"
-
-            commit_hash_match = re.search(r'\[.*\s([a-f0-9]+)\]', output)
-            commit_hash = commit_hash_match.group(1) if commit_hash_match else "unknown"
-            
-            return True, f"[{current_branch} {commit_hash}] {message}"
+            try:
+                self.repo.git.add(A=True)
+                self.repo.git.commit(m=message)
+                commit_hash = self.repo.head.commit.hexsha[:7]
+                return True, f"[{current_branch} {commit_hash}] {message}"
+            except GitCommandError as e:
+                return False, f"Failed to commit: {str(e)}"
         else:
             return False, "Not on a task branch"
     
@@ -159,10 +174,15 @@ class GitOps:
         Returns:
             Optional[str]: The main branch name, or None if not found
         """
+        if not self.repo:
+            return None
+            
         for branch in ["master", "main"]:
-            success, _ = self._run_command(f"git rev-parse --verify {branch}")
-            if success:
-                return branch
+            try:
+                if branch in [ref.name for ref in self.repo.refs]:
+                    return branch
+            except GitCommandError:
+                pass
         return None
     
     def get_task_log(self, show_graph: bool = False) -> List[str]:
@@ -175,19 +195,27 @@ class GitOps:
         Returns:
             List[str]: List of commit log lines
         """
+        if not self.repo:
+            return ["Not a git repository"]
+            
         main_branch = self.get_main_branch()
         current_branch = self.get_current_branch()
         
         if not main_branch or not current_branch:
             return ["Unable to determine branches"]
 
-        graph_option = "--graph --oneline --decorate" if show_graph else "--oneline"
-        success, output = self._run_command(f"git log {graph_option} {main_branch}..{current_branch}")
-        
-        if not success or not output:
+        try:
+            if show_graph:
+                output = self.repo.git.log("--graph", "--oneline", "--decorate", f"{main_branch}..{current_branch}")
+            else:
+                output = self.repo.git.log("--oneline", f"{main_branch}..{current_branch}")
+                
+            if not output:
+                return ["No commits found"]
+                
+            return output.split('\n')
+        except GitCommandError:
             return ["No commits found"]
-        
-        return output.split('\n')
     
     def get_diff(self) -> str:
         """
@@ -196,14 +224,20 @@ class GitOps:
         Returns:
             str: Difference content or error message
         """
+        if not self.repo:
+            return "Not a git repository"
+            
         main_branch = self.get_main_branch()
         current_branch = self.get_current_branch()
         
         if not main_branch or not current_branch:
             return "Unable to determine branches"
         
-        success, output = self._run_command(f"git diff {main_branch}..{current_branch}")
-        return output if success and output else "No differences found"
+        try:
+            output = self.repo.git.diff(f"{main_branch}..{current_branch}")
+            return output if output else "No differences found"
+        except GitCommandError as e:
+            return str(e)
     
     def squash_commits(self, message: str) -> Tuple[bool, str]:
         """
@@ -215,6 +249,9 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
+        if not self.repo:
+            return False, "Not a git repository"
+            
         main_branch = self.get_main_branch()
         current_branch = self.get_current_branch()
         
@@ -222,43 +259,42 @@ class GitOps:
             return False, "Unable to determine branches"
 
         temp_branch = f"temp-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-        success, _ = self._run_command(f"git checkout {main_branch}")
-        if not success:
-            return False, f"Failed to checkout {main_branch}"
         
-        success, _ = self._run_command(f"git checkout -b {temp_branch}")
-        if not success:
-            return False, f"Failed to create temporary branch"
-
-        success, output = self._run_command(f'git merge --squash {current_branch}')
-        if not success:
-            self._run_command(f"git checkout {current_branch}")
-            self._run_command(f"git branch -D {temp_branch}")
-            return False, f"Failed to squash merge: {output}"
-
-        success, output = self._run_command(f'git commit -m "{message}"')
-        if not success:
-            self._run_command(f"git checkout {current_branch}")
-            self._run_command(f"git branch -D {temp_branch}")
-            return False, f"Failed to commit squashed changes: {output}"
-
-        success, commit_hash = self._run_command(f"git rev-parse HEAD")
-        if not success:
-            commit_hash = "unknown"
-
-        success, _ = self._run_command(f"git checkout {main_branch}")
-        if not success:
-            return False, f"Failed to checkout {main_branch}"
-        
-        success, _ = self._run_command(f"git merge {temp_branch}")
-        if not success:
-            return False, f"Failed to merge temporary branch"
-
-        # Cleanup temporary branch
-        self._run_command(f"git branch -D {temp_branch}")
-
-        # Stay on main branch instead of returning to task branch
-        return True, f"[{main_branch} {commit_hash[:7]}] {message}"
+        try:
+            # Checkout main branch
+            self.repo.git.checkout(main_branch)
+            
+            # Create temporary branch
+            self.repo.git.checkout(b=temp_branch)
+            
+            # Squash merge the current branch
+            self.repo.git.merge("--squash", current_branch)
+            
+            # Commit the squashed changes
+            self.repo.git.commit(m=message)
+            
+            # Get commit hash
+            commit_hash = self.repo.head.commit.hexsha[:7]
+            
+            # Checkout main branch again
+            self.repo.git.checkout(main_branch)
+            
+            # Merge the temporary branch
+            self.repo.git.merge(temp_branch)
+            
+            # Delete temporary branch
+            self.repo.git.branch(D=temp_branch)
+            
+            return True, f"[{main_branch} {commit_hash}] {message}"
+        except GitCommandError as e:
+            # Try to cleanup
+            try:
+                self.repo.git.checkout(current_branch)
+                if temp_branch in [ref.name for ref in self.repo.refs]:
+                    self.repo.git.branch(D=temp_branch)
+            except GitCommandError:
+                pass
+            return False, str(e)
     
     def abort_changes(self) -> Tuple[bool, str]:
         """
@@ -267,22 +303,24 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
+        if not self.repo:
+            return False, "Not a git repository"
+            
         current_branch = self.get_current_branch()
         
         if not current_branch or self.config.task_prefix not in current_branch:
             return False, "Not on a task branch"
 
-        # Reset all changes
-        success, output = self._run_command("git reset --hard HEAD")
-        if not success:
-            return False, f"Failed to reset changes: {output}"
-
-        # Clean untracked files
-        success, output = self._run_command("git clean -fd")
-        if not success:
-            return False, f"Failed to clean untracked files: {output}"
-        
-        return True, "All changes have been abandoned"
+        try:
+            # Reset all changes
+            self.repo.git.reset("--hard", "HEAD")
+            
+            # Clean untracked files
+            self.repo.git.clean("-fd")
+            
+            return True, "All changes have been abandoned"
+        except GitCommandError as e:
+            return False, str(e)
     
     def delete_branch(self, branch_name: str) -> Tuple[bool, str]:
         """
@@ -294,5 +332,11 @@ class GitOps:
         Returns:
             Tuple[bool, str]: (success flag, output or error message)
         """
-        success, output = self._run_command(f"git branch -D {branch_name}")
-        return success, output
+        if not self.repo:
+            return False, "Not a git repository"
+            
+        try:
+            self.repo.git.branch(D=branch_name)
+            return True, f"Deleted branch {branch_name}"
+        except GitCommandError as e:
+            return False, str(e)

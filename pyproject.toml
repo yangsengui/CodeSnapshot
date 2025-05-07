@@ -9,6 +9,7 @@ dependencies = [
     "colorama",
     "mcp[cli]>=1.7.1",
     "pydantic>=2.0.0",
+    "gitpython>=3.1.30",
 ]
 
 [project.scripts]
