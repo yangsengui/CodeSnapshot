@@ -4,10 +4,11 @@ import re
 from datetime import datetime
 from typing import Tuple, List, Optional, Union
 from colorama import Fore
+from .config import ConfigOptions
 
 class GitOps:
     def __init__(self) -> None:
-        self.task_prefix: str = "codesnap@task/"
+        self.config = ConfigOptions()
     
     def _run_command(self, command: str, capture_output: bool = True) -> Tuple[bool, Optional[str]]:
         try:
@@ -72,7 +73,7 @@ class GitOps:
         
         # Get current branch to include in commit message
         current_branch = self.get_current_branch()
-        if self.task_prefix in current_branch:
+        if self.config.task_prefix in current_branch:
             # Add all changes
             success, _ = self._run_command("git add .")
             if not success:
@@ -181,7 +182,7 @@ class GitOps:
     def abort_changes(self) -> Tuple[bool, str]:
         current_branch = self.get_current_branch()
         
-        if not current_branch or self.task_prefix not in current_branch:
+        if not current_branch or self.config.task_prefix not in current_branch:
             return False, "Not on a task branch"
         
         # Reset all changes

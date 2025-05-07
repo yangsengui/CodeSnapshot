@@ -1,38 +1,39 @@
 import os
 import json
-from datetime import datetime, timedelta
-from typing import List, Dict, Tuple, Optional, Any, Union
+from datetime import datetime
+from typing import List, Dict, Tuple, Optional, Any
+
 from .git import GitOps
-from .models import Task, TasksList
+from .models import Task, TaskStatus
+from .config import ConfigOptions
+
 
 class TaskManager:
     def __init__(self) -> None:
+        self.config = ConfigOptions()
         self.git: GitOps = GitOps()
-        self.task_prefix: str = "codesnap@task/"
-        self.config_dir: str = os.path.join(os.getcwd(), ".codesnap")
-        self.tasks_file: str = os.path.join(self.config_dir, "tasks.json")
         self._ensure_config_dir()
     
     def _ensure_config_dir(self) -> None:
-        if not os.path.exists(self.config_dir):
-            os.makedirs(self.config_dir, exist_ok=True)
+        if not os.path.exists(self.config.config_dir):
+            os.makedirs(self.config.config_dir, exist_ok=True)
         
         # Initialize tasks file if it doesn't exist
-        if not os.path.exists(self.tasks_file):
-            with open(self.tasks_file, "w") as f:
+        if not os.path.exists(self.config.tasks_file):
+            with open(self.config.tasks_file, "w") as f:
                 json.dump([], f)
     
     def _load_tasks(self) -> List[Dict[str, Any]]:
         try:
-            with open(self.tasks_file, "r") as f:
+            with open(self.config.tasks_file, "r") as f:
                 return json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
             return []
     
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
-        with open(self.tasks_file, "w") as f:
+        with open(self.config.tasks_file, "w") as f:
             json.dump(tasks, f, indent=4)
-    
+
     def _get_next_id(self, tasks: List[Dict[str, Any]]) -> int:
         if not tasks:
             return 1
@@ -58,7 +59,7 @@ class TaskManager:
             return False, f"Base branch '{base_branch}' does not exist"
         
         # Create branch name
-        branch_name = f"{self.task_prefix}{task_name}"
+        branch_name = f"{self.config.task_prefix}{task_name}"
         
         # Make sure we're on the base branch first
         success, output = self.git.checkout_branch(base_branch)
@@ -81,7 +82,7 @@ class TaskManager:
             branch=branch_name,
             base_branch=base_branch,
             description=description,
-            status="Active",
+            status=TaskStatus.ACTIVE,
             created=now,
             last_activity=now,
             commits=0
@@ -118,7 +119,7 @@ class TaskManager:
     
     def get_current_task(self) -> Optional[Task]:
         current_branch = self.git.get_current_branch()
-        if not current_branch or self.task_prefix not in current_branch:
+        if not current_branch or self.config.task_prefix not in current_branch:
             return None
         
         tasks = self._load_tasks()
@@ -128,7 +129,7 @@ class TaskManager:
         
         return None
     
-    def update_task_status(self, task_name: str, status: str, increment_commits: bool = False) -> bool:
+    def update_task_status(self, task_name: str, status: TaskStatus, increment_commits: bool = False) -> bool:
         tasks = self._load_tasks()
         updated = False
         
@@ -197,7 +198,7 @@ class TaskManager:
             success, result = self.git.squash_commits(message)
             if success:
                 # Update task status
-                self.update_task_status(task.name, "Merged", False)
+                self.update_task_status(task.name, TaskStatus.MERGED, False)
                 
                 # Switch to base branch
                 self.git.checkout_branch(base_branch)
@@ -217,7 +218,7 @@ class TaskManager:
             
             if success:
                 # Update task status
-                self.update_task_status(task.name, "Merged", False)
+                self.update_task_status(task.name, TaskStatus.MERGED, False)
                 return True, f"Merged '{current_branch}' into '{base_branch}' and stayed on {base_branch}"
             else:
                 # Return to the task branch on failure
@@ -248,7 +249,7 @@ class TaskManager:
             return False, f"Failed to switch back to {base_branch}: {output}"
         
         # Update task status
-        self.update_task_status(task_name, "Aborted", False)
+        self.update_task_status(task_name, TaskStatus.ABORTED, False)
         
         # Delete branch if requested
         if delete_branch:
@@ -284,7 +285,7 @@ class TaskManager:
             
             if days_old >= days:
                 # Check if task is merged if merged_only is True
-                if merged_only and task["status"] != "Merged":
+                if merged_only and task["status"] != TaskStatus.MERGED.value:
                     continue
                 
                 # Check if branch still exists

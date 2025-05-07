@@ -1,5 +1,12 @@
 from typing import List
+from enum import Enum
 from pydantic import BaseModel
+
+
+class TaskStatus(Enum):
+    ACTIVE = "Active"
+    MERGED = "Merged"
+    ABORTED = "Aborted"
 
 
 class Task(BaseModel):
@@ -8,7 +15,7 @@ class Task(BaseModel):
     branch: str
     base_branch: str
     description: str = ""
-    status: str = "Active"
+    status: TaskStatus = TaskStatus.ACTIVE
     created: str
     last_activity: str
     commits: int = 0
