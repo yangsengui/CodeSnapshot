@@ -96,7 +96,11 @@ class TaskManager:
             commits=0
         )
         
-        tasks.append(new_task.model_dump())
+        # 确保枚举值被转换为字符串
+        task_dict = new_task.model_dump()
+        task_dict['status'] = task_dict['status'].value
+        
+        tasks.append(task_dict)
         self._save_tasks(tasks)
         
         return True, f"Created task branch '{branch_name}'\nDescription: {description or 'None'}\nCreated: {now}"
@@ -164,7 +168,8 @@ class TaskManager:
         
         for task in tasks:
             if task["name"] == task_name:
-                task["status"] = status
+                # 将TaskStatus枚举转换为字符串形式再保存
+                task["status"] = status.value if isinstance(status, TaskStatus) else status
                 task["last_activity"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 if increment_commits:
                     task["commits"] += 1
@@ -236,6 +241,7 @@ class TaskManager:
 
             success, result = self.git.squash_commits(message)
             if success:
+                # 更新任务状态为已合并
                 self.update_task_status(task.name, TaskStatus.MERGED, False)
                 self.git.checkout_branch(base_branch)
                 
@@ -285,6 +291,7 @@ class TaskManager:
         if not success:
             return False, f"Failed to switch back to {base_branch}: {output}"
 
+        # 将任务状态更新为终止
         self.update_task_status(task_name, TaskStatus.ABORTED, False)
 
         if delete_branch:
@@ -326,6 +333,7 @@ class TaskManager:
             days_old = (current_time - last_activity).days
             
             if days_old >= days:
+                # 检查任务状态，只删除已合并的任务
                 if merged_only and task["status"] != TaskStatus.MERGED.value:
                     continue
 
