@@ -2,9 +2,10 @@ import os
 import subprocess
 import re
 from datetime import datetime
-from typing import Tuple, List, Optional, Union
-from colorama import Fore
+from typing import Tuple, List, Optional
+
 from .config import ConfigOptions
+
 
 class GitOps:
     def __init__(self) -> None:
@@ -67,24 +68,19 @@ class GitOps:
         return output if success else ""
     
     def commit_changes(self, message: str) -> Tuple[bool, str]:
-        # Check if there are any changes to commit
         if not self.get_changes():
             return False, "No changes to commit"
-        
-        # Get current branch to include in commit message
+
         current_branch = self.get_current_branch()
         if self.config.task_prefix in current_branch:
-            # Add all changes
             success, _ = self._run_command("git add .")
             if not success:
                 return False, "Failed to stage changes"
-            
-            # Commit with branch name
+
             success, output = self._run_command(f'git commit -m "{message}"')
             if not success:
                 return False, f"Failed to commit: {output}"
-            
-            # Parse commit hash and return formatted output
+
             commit_hash_match = re.search(r'\[.*\s([a-f0-9]+)\]', output)
             commit_hash = commit_hash_match.group(1) if commit_hash_match else "unknown"
             
@@ -93,7 +89,6 @@ class GitOps:
             return False, "Not on a task branch"
     
     def get_main_branch(self) -> Optional[str]:
-        # Try to determine main branch (master, main, etc.)
         for branch in ["master", "main"]:
             success, _ = self._run_command(f"git rev-parse --verify {branch}")
             if success:
@@ -106,8 +101,7 @@ class GitOps:
         
         if not main_branch or not current_branch:
             return ["Unable to determine branches"]
-        
-        # Get commits between main branch and current task branch
+
         graph_option = "--graph --oneline --decorate" if show_graph else "--oneline"
         success, output = self._run_command(f"git log {graph_option} {main_branch}..{current_branch}")
         
@@ -132,8 +126,7 @@ class GitOps:
         
         if not main_branch or not current_branch:
             return False, "Unable to determine branches"
-        
-        # Create a temporary branch at the same point as main
+
         temp_branch = f"temp-{datetime.now().strftime('%Y%m%d%H%M%S')}"
         success, _ = self._run_command(f"git checkout {main_branch}")
         if not success:
@@ -142,29 +135,23 @@ class GitOps:
         success, _ = self._run_command(f"git checkout -b {temp_branch}")
         if not success:
             return False, f"Failed to create temporary branch"
-        
-        # Merge the task branch with squash
+
         success, output = self._run_command(f'git merge --squash {current_branch}')
         if not success:
-            # Cleanup and return error
             self._run_command(f"git checkout {current_branch}")
             self._run_command(f"git branch -D {temp_branch}")
             return False, f"Failed to squash merge: {output}"
-        
-        # Commit the squashed changes
+
         success, output = self._run_command(f'git commit -m "{message}"')
         if not success:
-            # Cleanup and return error
             self._run_command(f"git checkout {current_branch}")
             self._run_command(f"git branch -D {temp_branch}")
             return False, f"Failed to commit squashed changes: {output}"
-        
-        # Get the commit hash
+
         success, commit_hash = self._run_command(f"git rev-parse HEAD")
         if not success:
             commit_hash = "unknown"
-        
-        # Checkout main branch and merge temp branch
+
         success, _ = self._run_command(f"git checkout {main_branch}")
         if not success:
             return False, f"Failed to checkout {main_branch}"
@@ -172,11 +159,9 @@ class GitOps:
         success, _ = self._run_command(f"git merge {temp_branch}")
         if not success:
             return False, f"Failed to merge temporary branch"
-        
-        # Cleanup temporary branch
+
         self._run_command(f"git branch -D {temp_branch}")
-        
-        # Stay on main branch instead of returning to task branch
+
         return True, f"[{main_branch} {commit_hash[:7]}] {message}"
     
     def abort_changes(self) -> Tuple[bool, str]:
@@ -184,13 +169,11 @@ class GitOps:
         
         if not current_branch or self.config.task_prefix not in current_branch:
             return False, "Not on a task branch"
-        
-        # Reset all changes
+
         success, output = self._run_command("git reset --hard HEAD")
         if not success:
             return False, f"Failed to reset changes: {output}"
-        
-        # Clean untracked files
+
         success, output = self._run_command("git clean -fd")
         if not success:
             return False, f"Failed to clean untracked files: {output}"

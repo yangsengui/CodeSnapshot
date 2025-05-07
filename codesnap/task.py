@@ -1,5 +1,3 @@
-import os
-import json
 from datetime import datetime
 from typing import List, Dict, Tuple, Optional, Any
 
@@ -12,27 +10,12 @@ class TaskManager:
     def __init__(self) -> None:
         self.config = ConfigOptions()
         self.git: GitOps = GitOps()
-        self._ensure_config_dir()
-    
-    def _ensure_config_dir(self) -> None:
-        if not os.path.exists(self.config.config_dir):
-            os.makedirs(self.config.config_dir, exist_ok=True)
-        
-        # Initialize tasks file if it doesn't exist
-        if not os.path.exists(self.config.tasks_file):
-            with open(self.config.tasks_file, "w") as f:
-                json.dump([], f)
     
     def _load_tasks(self) -> List[Dict[str, Any]]:
-        try:
-            with open(self.config.tasks_file, "r") as f:
-                return json.load(f)
-        except (FileNotFoundError, json.JSONDecodeError):
-            return []
+        return self.config.load_tasks()
     
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
-        with open(self.config.tasks_file, "w") as f:
-            json.dump(tasks, f, indent=4)
+        self.config.save_tasks(tasks)
 
     def _get_next_id(self, tasks: List[Dict[str, Any]]) -> int:
         if not tasks:
@@ -52,26 +35,21 @@ class TaskManager:
             base_branch = self.git.get_current_branch()
             if not base_branch:
                 return False, "Unable to determine current branch"
-        
-        # Check if base branch exists
+
         success, _ = self.git._run_command(f"git rev-parse --verify {base_branch}")
         if not success:
             return False, f"Base branch '{base_branch}' does not exist"
-        
-        # Create branch name
+
         branch_name = f"{self.config.task_prefix}{task_name}"
-        
-        # Make sure we're on the base branch first
+
         success, output = self.git.checkout_branch(base_branch)
         if not success:
             return False, f"Failed to checkout base branch: {output}"
-        
-        # Create and checkout the new branch
+
         success, output = self.git.create_branch(branch_name)
         if not success:
             return False, f"Failed to create task branch: {output}"
-        
-        # Save task information
+
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         tasks = self._load_tasks()
         task_id = self._get_next_id(tasks)
@@ -101,10 +79,8 @@ class TaskManager:
         result = []
         
         for task_data in tasks_data:
-            # Create a Task model from the data
             task = Task.model_validate(task_data)
-            
-            # Format task for display
+
             result.append({
                 "id": task.id,
                 "name": task.name,
@@ -152,28 +128,21 @@ class TaskManager:
         task = self.get_current_task()
         if not task:
             return False, "Not on a task branch"
-        
-        # Get the base branch
+
         base_branch = task.base_branch
-        
-        # Save current branch name
+
         current_branch = self.git.get_current_branch()
-        
-        # Checkout the base branch
+
         success, output = self.git.checkout_branch(base_branch)
         if not success:
             return False, f"Failed to checkout base branch: {output}"
-        
-        # Merge without committing
+
         success, output = self.git._run_command(f"git merge --no-commit --no-ff {current_branch}")
         if not success:
-            # In case of merge conflict, abort the merge
             self.git._run_command("git merge --abort")
-            # Go back to the task branch
             self.git.checkout_branch(current_branch)
             return False, f"Failed to merge changes: {output}"
-        
-        # Return to the task branch if requested
+
         if return_to_task:
             self.git.checkout_branch(current_branch)
             return True, f"Applied changes from '{current_branch}' to '{base_branch}' (not committed)"
@@ -184,23 +153,17 @@ class TaskManager:
         task = self.get_current_task()
         if not task:
             return False, "Not on a task branch"
-        
-        # Get the base branch
+
         base_branch = task.base_branch
         current_branch = self.git.get_current_branch()
         
         if squash:
-            # Use commit message or generate default
             if not message:
                 message = f"Merge task '{task.name}'"
-            
-            # Squash and merge
+
             success, result = self.git.squash_commits(message)
             if success:
-                # Update task status
                 self.update_task_status(task.name, TaskStatus.MERGED, False)
-                
-                # Switch to base branch
                 self.git.checkout_branch(base_branch)
                 
                 return True, f"Squashed and merged '{current_branch}' into '{base_branch}' and switched to {base_branch}"
