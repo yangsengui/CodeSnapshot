@@ -12,25 +12,56 @@ class TaskManager:
         self.git: GitOps = GitOps()
     
     def _load_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Load task list from configuration file.
+        
+        Returns:
+            List[Dict[str, Any]]: List of task data
+        """
         return self.config.load_tasks()
     
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
+        """
+        Save task list to configuration file.
+        
+        Args:
+            tasks (List[Dict[str, Any]]): List of task data to save
+        """
         self.config.save_tasks(tasks)
 
     def _get_next_id(self, tasks: List[Dict[str, Any]]) -> int:
+        """
+        Get the next available task ID.
+        
+        Args:
+            tasks (List[Dict[str, Any]]): Current task list
+            
+        Returns:
+            int: Next available task ID
+        """
         if not tasks:
             return 1
         return max(task.get("id", 0) for task in tasks) + 1
     
     def create_task(self, task_name: str, description: str = "", force: bool = False, base_branch: Optional[str] = None) -> Tuple[bool, str]:
+        """
+        Create a new task and switch to the task branch.
+        
+        Args:
+            task_name (str): Task name
+            description (str): Task description, defaults to empty string
+            force (bool): Whether to force creation even if there are uncommitted changes, defaults to False
+            base_branch (Optional[str]): Base branch, defaults to current branch
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
         if not self.git.is_git_repo():
             return False, "Not in a Git repository"
-        
-        # Check if there are uncommitted changes and force wasn't specified
+
         if not force and self.git.get_changes():
             return False, "You have uncommitted changes. Use --force to proceed anyway"
-        
-        # Get the base branch
+
         if not base_branch:
             base_branch = self.git.get_current_branch()
             if not base_branch:
@@ -72,6 +103,12 @@ class TaskManager:
         return True, f"Created task branch '{branch_name}'\nDescription: {description or 'None'}\nCreated: {now}"
     
     def list_tasks(self) -> List[Dict[str, Any]]:
+        """
+        Get a list of all tasks.
+        
+        Returns:
+            List[Dict[str, Any]]: List of task information
+        """
         if not self.git.is_git_repo():
             return []
         
@@ -94,6 +131,12 @@ class TaskManager:
         return result
     
     def get_current_task(self) -> Optional[Task]:
+        """
+        Get the task corresponding to the current branch.
+        
+        Returns:
+            Optional[Task]: Current task object, or None if not on a task branch
+        """
         current_branch = self.git.get_current_branch()
         if not current_branch or self.config.task_prefix not in current_branch:
             return None
@@ -106,6 +149,17 @@ class TaskManager:
         return None
     
     def update_task_status(self, task_name: str, status: TaskStatus, increment_commits: bool = False) -> bool:
+        """
+        Update task status.
+        
+        Args:
+            task_name (str): Task name
+            status (TaskStatus): New status
+            increment_commits (bool): Whether to increment commit count, defaults to False
+            
+        Returns:
+            bool: True if update successful, False otherwise
+        """
         tasks = self._load_tasks()
         updated = False
         
@@ -125,6 +179,15 @@ class TaskManager:
         return False
     
     def apply_changes(self, return_to_task: bool = True) -> Tuple[bool, str]:
+        """
+        Apply task branch changes to the base branch without committing.
+        
+        Args:
+            return_to_task (bool): Whether to return to task branch after applying, defaults to True
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
         task = self.get_current_task()
         if not task:
             return False, "Not on a task branch"
@@ -150,6 +213,17 @@ class TaskManager:
             return True, f"Applied changes from '{current_branch}' to '{base_branch}' (not committed) and stayed on {base_branch}"
     
     def merge_changes(self, commit: bool = False, message: Optional[str] = None, squash: bool = False) -> Tuple[bool, str]:
+        """
+        Merge task branch changes into the base branch.
+        
+        Args:
+            commit (bool): Whether to commit the merge, defaults to False
+            message (Optional[str]): The merge commit message, defaults to None
+            squash (bool): Whether to squash commits, defaults to False
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
         task = self.get_current_task()
         if not task:
             return False, "Not on a task branch"
@@ -170,55 +244,53 @@ class TaskManager:
             else:
                 return False, result
         elif commit:
-            # Checkout the base branch
             success, output = self.git.checkout_branch(base_branch)
             if not success:
                 return False, f"Failed to checkout base branch: {output}"
-            
-            # Regular merge with commit
+
             merge_message = message or f"Merge task '{task.name}'"
             success, output = self.git._run_command(f'git merge --no-ff {current_branch} -m "{merge_message}"')
             
             if success:
-                # Update task status
                 self.update_task_status(task.name, TaskStatus.MERGED, False)
                 return True, f"Merged '{current_branch}' into '{base_branch}' and stayed on {base_branch}"
             else:
-                # Return to the task branch on failure
                 self.git.checkout_branch(current_branch)
                 return False, f"Failed to merge: {output}"
         else:
-            # Apply changes without committing, but stay on base branch
             return self.apply_changes(return_to_task=False)
     
     def abort_task(self, delete_branch: bool = False) -> Tuple[bool, str]:
+        """
+        Abandon the task, revert all changes and return to the base branch.
+        
+        Args:
+            delete_branch (bool): Whether to delete the task branch, defaults to False
+            
+        Returns:
+            Tuple[bool, str]: (success flag, output or error message)
+        """
         task = self.get_current_task()
         if not task:
             return False, "Not on a task branch"
-        
-        # Get task name and base branch before aborting
+
         task_name = task.name
         base_branch = task.base_branch
         task_branch = task.branch
-        
-        # Abort any changes
+
         success, message = self.git.abort_changes()
         if not success:
             return False, message
-        
-        # Switch back to base branch
+
         success, output = self.git.checkout_branch(base_branch)
         if not success:
             return False, f"Failed to switch back to {base_branch}: {output}"
-        
-        # Update task status
+
         self.update_task_status(task_name, TaskStatus.ABORTED, False)
-        
-        # Delete branch if requested
+
         if delete_branch:
             success, output = self.git.delete_branch(task_branch)
             if success:
-                # Remove task from list
                 tasks = self._load_tasks()
                 tasks = [t for t in tasks if t['branch'] != task_branch]
                 self._save_tasks(tasks)
@@ -229,6 +301,16 @@ class TaskManager:
         return True, f"Abandoned all changes in task '{task_name}' and switched to {base_branch}"
     
     def prune_tasks(self, days: int = 30, merged_only: bool = False) -> int:
+        """
+        Clean up old tasks, remove task branches that have been inactive for a while.
+        
+        Args:
+            days (int): Threshold for days of inactivity, defaults to 30 days
+            merged_only (bool): Whether to only clean up merged tasks, defaults to False
+            
+        Returns:
+            int: Number of tasks cleaned up
+        """
         if not self.git.is_git_repo():
             return 0
         
@@ -238,28 +320,22 @@ class TaskManager:
         current_branch = self.git.get_current_branch()
         
         for task in tasks:
-            # Skip if we're currently on this task branch
             if task["branch"] == current_branch:
                 continue
-            
-            # Check if the task is old enough
+
             last_activity = datetime.strptime(task["last_activity"], "%Y-%m-%d %H:%M:%S")
             days_old = (current_time - last_activity).days
             
             if days_old >= days:
-                # Check if task is merged if merged_only is True
                 if merged_only and task["status"] != TaskStatus.MERGED.value:
                     continue
-                
-                # Check if branch still exists
+
                 success, _ = self.git._run_command(f"git rev-parse --verify {task['branch']}")
                 if success:
-                    # Delete the branch
                     success, _ = self.git.delete_branch(task["branch"])
                     if success:
                         tasks_to_delete.append(task)
-        
-        # Remove deleted tasks from the list
+
         if tasks_to_delete:
             tasks = [task for task in tasks if task not in tasks_to_delete]
             self._save_tasks(tasks)
