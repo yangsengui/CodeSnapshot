@@ -19,7 +19,7 @@ git_ops: Optional[GitOps] = None
 
 
 @mcp.tool()
-def task_list_all() -> str:
+def task_list() -> str:
     """Lists all tasks in the repository.
     
     Returns a formatted table of tasks with their ID, name, status, creation date,
@@ -33,12 +33,37 @@ def task_list_all() -> str:
     if not tasks:
         return "No tasks found."
 
-    task_list = ["Tasks:", "ID | NAME | STATUS | CREATED | LAST ACTIVITY | COMMITS | DESCRIPTION",
-                 "---+------+--------+---------+--------------+---------+------------"]
-
+    # 定义列标题
+    headers = ["ID", "NAME", "STATUS", "CREATED", "LAST ACTIVITY", "COMMITS", "DESCRIPTION"]
+    
+    # 计算每列的最大宽度
+    widths = [len(header) for header in headers]
+    
+    # 检查每个任务的数据列宽度
     for task in tasks:
-        task_list.append(
-            f"{task['id']} | {task['name']} | {task['status']} | {task['created']} | {task['last_activity']} | {task['commits']} | {task['description']}")
+        widths[0] = max(widths[0], len(str(task['id'])))
+        widths[1] = max(widths[1], len(str(task['name'])))
+        widths[2] = max(widths[2], len(str(task['status'])))
+        widths[3] = max(widths[3], len(task['created']))
+        widths[4] = max(widths[4], len(task['last_activity']))
+        widths[5] = max(widths[5], len(str(task['commits'])))
+        widths[6] = max(widths[6], len(str(task['description'])))
+
+    format_str = "  ".join([f"{{:{w}}}" for w in widths])
+
+    task_list = []
+    task_list.append(format_str.format(*headers))
+    
+    for task in tasks:
+        task_list.append(format_str.format(
+            task['id'],
+            task['name'],
+            task['status'],
+            task['created'],
+            task['last_activity'],
+            task['commits'],
+            task['description']
+        ))
 
     return "\n".join(task_list)
 
@@ -93,27 +118,6 @@ def task_merge(commit: bool = False, message: Optional[str] = None, squash: bool
         message,
         squash
     )
-    status = "SUCCESS" if success else "ERROR"
-    return f"[{status}] {message}"
-
-
-@mcp.tool()
-def task_apply(return_to_task: bool = True) -> str:
-    """Applies task changes to the main branch without committing.
-    
-    Temporarily applies the changes from the current task branch to the base branch
-    without creating a commit. This allows testing changes on the base branch
-    before fully merging.
-    
-    Args:
-        return_to_task: Whether to return to the task branch after applying
-                        changes (defaults to True)
-    
-    Returns:
-        str: Success or error message with details about the operation
-    """
-    global task_manager
-    success, message = task_manager.apply_changes(return_to_task)
     status = "SUCCESS" if success else "ERROR"
     return f"[{status}] {message}"
 
@@ -182,7 +186,7 @@ def task_log(show_graph: bool = False) -> str:
 
 
 @mcp.tool()
-def git_status() -> str:
+def task_status() -> str:
     """Shows working tree status of the repository.
     
     Reports the state of the working directory and staging area,
@@ -200,7 +204,7 @@ def git_status() -> str:
 
 
 @mcp.tool()
-def git_diff() -> str:
+def task_diff() -> str:
     """Shows changes between task and main branch.
     
     Displays the differences between the current task branch and its base branch,
@@ -215,7 +219,7 @@ def git_diff() -> str:
 
 
 @mcp.tool()
-def git_commit(message: str) -> str:
+def task_commit(message: str) -> str:
     """Commits changes to current task branch.
     
     Records all current changes in the task branch with the specified commit message.
@@ -270,7 +274,6 @@ def setup_manager() -> None:
     else:
         repository_path = Path(os.getcwd())
 
-    # 切换到仓库目录
     original_dir = os.getcwd()
     os.chdir(str(repository_path))
 
@@ -292,7 +295,6 @@ setup_manager()
 
 if __name__ == "__main__":
     import asyncio
-    import argparse
 
     logging.basicConfig(level=logging.INFO)
 

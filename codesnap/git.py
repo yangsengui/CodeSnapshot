@@ -1,5 +1,4 @@
 import os
-import re
 from datetime import datetime
 from typing import Tuple, List, Optional
 import git

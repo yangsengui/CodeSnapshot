@@ -181,41 +181,8 @@ class TaskManager:
             return True
         
         return False
-    
-    def apply_changes(self, return_to_task: bool = True) -> Tuple[bool, str]:
-        """
-        Apply task branch changes to the base branch without committing.
-        
-        Args:
-            return_to_task (bool): Whether to return to task branch after applying, defaults to True
-            
-        Returns:
-            Tuple[bool, str]: (success flag, output or error message)
-        """
-        task = self.get_current_task()
-        if not task:
-            return False, "Not on a task branch"
 
-        base_branch = task.base_branch
 
-        current_branch = self.git.get_current_branch()
-
-        success, output = self.git.checkout_branch(base_branch)
-        if not success:
-            return False, f"Failed to checkout base branch: {output}"
-
-        success, output = self.git.merge_without_commit(current_branch)
-        if not success:
-            self.git.abort_merge()
-            self.git.checkout_branch(current_branch)
-            return False, f"Failed to merge changes: {output}"
-
-        if return_to_task:
-            self.git.checkout_branch(current_branch)
-            return True, f"Applied changes from '{current_branch}' to '{base_branch}' (not committed)"
-        else:
-            return True, f"Applied changes from '{current_branch}' to '{base_branch}' (not committed) and stayed on {base_branch}"
-    
     def merge_changes(self, commit: bool = False, message: Optional[str] = None, squash: bool = False) -> Tuple[bool, str]:
         """
         Merge task branch changes into the base branch.
