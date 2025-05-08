@@ -19,7 +19,7 @@ class TaskManager:
             List[Dict[str, Any]]: List of task data
         """
         return self.config.load_tasks()
-    
+
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
         """
         Save task list to configuration file.

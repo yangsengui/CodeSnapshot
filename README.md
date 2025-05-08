@@ -43,3 +43,6 @@ Examples:
 ## License
 
 MIT
+
+## 设计
+当创建新文件时，如果AI认为需要将该文件排除，则由AI将其添加至.gitignore，否则commit时ai会将其自动将其提交至commit中
