@@ -6,7 +6,6 @@ import click
 from colorama import init, Fore
 from datetime import datetime
 
-# Initialize colorama
 init(autoreset=True)
 
 # Import operations modules
@@ -19,10 +18,12 @@ except ImportError:
     from codesnap.git import GitOps
     from codesnap.task import TaskManager
 
+
 # Main CLI group
 @click.group(help=f"{Fore.CYAN}CS - CodeSnap{Fore.RESET} - AI-powered code snapshot tool")
 def cli() -> None:
     pass
+
 
 # Initialize repository
 @cli.command(help="Initialize a new repository with CodeSnap")
@@ -34,6 +35,7 @@ def init(branch: str) -> None:
         click.echo(f"[{Fore.GREEN}SUCCESS{Fore.RESET}] Created Git repository with {branch} branch")
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] Failed to initialize repository")
+
 
 # Start a new task
 @cli.command(help="Create a new task branch")
@@ -49,6 +51,7 @@ def start(task_name: str, description: str, force: bool, branch: Optional[str]) 
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {message}")
 
+
 # Commit changes
 @cli.command(help="Commit changes to the current task branch")
 @click.argument("message")
@@ -60,6 +63,7 @@ def commit(message: str) -> None:
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {result}")
 
+
 # Apply changes to main branch
 @cli.command(help="Apply all changes to the main branch without committing")
 def apply() -> None:
@@ -69,6 +73,7 @@ def apply() -> None:
         click.echo(f"[{Fore.GREEN}INFO{Fore.RESET}] {message}")
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {message}")
+
 
 # Merge changes to main branch
 @cli.command(help="Apply all changes to the main branch")
@@ -83,6 +88,7 @@ def merge(commit: bool, message: Optional[str], squash: bool) -> None:
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {result}")
 
+
 # Abort current task
 @cli.command(help="Abandon all changes in the current task")
 def abort() -> None:
@@ -93,23 +99,26 @@ def abort() -> None:
     else:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {message}")
 
+
 # List all tasks
 @cli.command(help="List all task branches")
 def list() -> None:
     task_manager = TaskManager()
     tasks = task_manager.list_tasks()
-    
+
     if not tasks:
         click.echo("No tasks found.")
         return
-    
+
     # Print table header
     click.echo("ID | NAME | STATUS | CREATED | LAST ACTIVITY | COMMITS | DESCRIPTION")
     click.echo("---+------+--------+---------+--------------+---------+------------")
-    
+
     # Print tasks
     for task in tasks:
-        click.echo(f"{task['id']} | {task['name']} | {task['status']} | {task['created']} | {task['last_activity']} | {task['commits']} | {task['description']}")
+        click.echo(
+            f"{task['id']} | {task['name']} | {task['status']} | {task['created']} | {task['last_activity']} | {task['commits']} | {task['description']}")
+
 
 # View task log
 @cli.command(help="View commits in the current task")
@@ -120,12 +129,14 @@ def log(graph: bool) -> None:
     for commit in commits:
         click.echo(commit)
 
+
 # View diff between task and main branch
 @cli.command(help="Show differences between task branch and main branch")
 def diff() -> None:
     git_ops = GitOps()
     differences = git_ops.get_diff()
     click.echo(differences)
+
 
 # Prune old task branches
 @cli.command(help="Clean up old task branches")
@@ -139,6 +150,7 @@ def prune(days: int, merged: bool) -> None:
     else:
         click.echo(f"[{Fore.YELLOW}INFO{Fore.RESET}] No branches were deleted")
 
+
 # Entry point
 def main() -> None:
     try:
@@ -146,6 +158,7 @@ def main() -> None:
     except Exception as e:
         click.echo(f"[{Fore.RED}ERROR{Fore.RESET}] {str(e)}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

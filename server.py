@@ -1,4 +1,6 @@
 import logging
+import os
+from pathlib import Path
 from typing import Optional
 
 from mcp.server.fastmcp import FastMCP
@@ -235,28 +237,26 @@ def git_init(branch_name: str = "master") -> str:
         return "[ERROR] Failed to initialize repository"
 
 
-def setup_manager() -> None:
+def setup_manager(repository: Path | None = None) -> None:
     import sys
 
-    repository = r"C:\Users\yangsg\PycharmProjects\202505\CodeSnap"
+    if repository is None:
+        repository = Path(os.getcwd())
 
     try:
-        store.setup_manager(repository)
+        store.setup_manager(str(repository))
     except Exception as e:
         sys.stderr.write(f"Error initializing services: {str(e)}")
         return
 
 
-async def serve() -> None:
-    logger = logging.getLogger(__name__)
-    async with stdio_server() as (read_stream, write_stream):
-        await mcp.run(read_stream, write_stream, raise_exceptions=True)
-
-setup_manager()
+async def serve(repository: Path | None = None) -> None:
+    setup_manager(repository)
+    await mcp.run_stdio_async()
 
 if __name__ == "__main__":
     import asyncio
 
     logging.basicConfig(level=logging.INFO)
 
-    asyncio.run(serve())
+    asyncio.run(serve(None))

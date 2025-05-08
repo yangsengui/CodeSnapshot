@@ -13,4 +13,4 @@ dependencies = [
 ]
 
 [project.scripts]
-cs = "codesnap.main:main"
+cs = "__main__:main"
